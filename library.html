@@ -285,6 +285,7 @@ input:focus, select:focus, textarea:focus{border-color:var(--accent);}
   background:rgba(18,21,28,.75); color:var(--text-dim);
   letter-spacing:.05em;
 }
+.acquire-badge.wish{background:var(--accent); color:#1a1508; font-weight:700;}
 .card .info{padding:10px 11px 12px; flex:1; display:flex; flex-direction:column; gap:5px;}
 .card .title{
   font-family:'Noto Serif TC', serif;
@@ -428,6 +429,12 @@ input:focus, select:focus, textarea:focus{border-color:var(--accent);}
 .detail-author{
   font-size:13px; color:var(--text-dim); margin:-6px 0 10px;
 }
+.detail-info{
+  display:grid; grid-template-columns:auto 1fr; gap:6px 14px;
+  margin:0; font-size:13px;
+}
+.detail-info dt{color:var(--text-faint);}
+.detail-info dd{margin:0; color:var(--text); word-break:break-all;}
 .detail-read-row{margin-top:10px; font-size:12.5px;}
 .detail-read-row .yes{color:var(--jade); font-weight:700;}
 .detail-read-row .no{color:var(--text-faint);}
@@ -456,6 +463,7 @@ input:focus, select:focus, textarea:focus{border-color:var(--accent);}
 ::-webkit-scrollbar-track{background:transparent;}
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" async></script>
 </head>
 <body>
 
@@ -493,6 +501,7 @@ input:focus, select:focus, textarea:focus{border-color:var(--accent);}
       <li data-v="all" class="active">全部</li>
       <li data-v="購買">購買</li>
       <li data-v="借閱">借閱</li>
+      <li data-v="欲購">欲購書籍 <span class="n" id="cnt-wish"></span></li>
     </ul>
 
     <h3 class="toggle" id="toggleCategory">書籍類別 <span class="chev">▸</span></h3>
@@ -517,7 +526,7 @@ input:focus, select:focus, textarea:focus{border-color:var(--accent);}
   <main class="content">
     <div class="toolbar">
       <div class="search-box">
-        <input id="searchInput" placeholder="搜尋書名、作者、標籤…">
+        <input id="searchInput" placeholder="搜尋書名、作者、出版社、ISBN、標籤…">
       </div>
       <div class="seg" id="sortSeg">
         <button data-v="added" class="on">依新增</button>
@@ -537,9 +546,42 @@ input:focus, select:focus, textarea:focus{border-color:var(--accent);}
       <label>書籍名稱</label>
       <input id="f-title" placeholder="輸入書名">
     </div>
-    <div class="field">
-      <label>作者姓名</label>
-      <input id="f-author" placeholder="輸入作者姓名">
+    <div class="field-row">
+      <div class="field">
+        <label>作者姓名</label>
+        <input id="f-author" placeholder="輸入作者姓名">
+      </div>
+      <div class="field">
+        <label>譯者</label>
+        <input id="f-translator" placeholder="輸入譯者姓名">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>出版社</label>
+        <input id="f-publisher" placeholder="輸入出版社">
+      </div>
+      <div class="field">
+        <label>出版日期</label>
+        <input id="f-pubdate" type="date">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>ISBN</label>
+        <input id="f-isbn" placeholder="例如：9789573331234" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label>語言</label>
+        <input id="f-language" list="languageOptions" placeholder="例如：繁體中文">
+        <datalist id="languageOptions">
+          <option value="繁體中文"></option>
+          <option value="簡體中文"></option>
+          <option value="英文"></option>
+          <option value="日文"></option>
+          <option value="韓文"></option>
+        </datalist>
+      </div>
     </div>
     <div class="field">
       <label>書封圖片</label>
@@ -574,6 +616,9 @@ input:focus, select:focus, textarea:focus{border-color:var(--accent);}
     <div class="field">
       <label><input type="checkbox" id="f-read" style="width:auto;margin-right:6px;"> 已讀完</label>
     </div>
+    <div class="field">
+      <label><input type="checkbox" id="f-wishlist" style="width:auto;margin-right:6px;"> 欲購（想買、尚未購買）</label>
+    </div>
     <div class="modal-actions">
       <button class="danger ghost" id="deleteBookBtn" style="display:none;">刪除此書</button>
       <div style="display:flex; gap:10px; margin-left:auto;">
@@ -597,6 +642,10 @@ input:focus, select:focus, textarea:focus{border-color:var(--accent);}
       </div>
       <span class="x" id="closeDetailModal">✕</span>
     </div>
+    <div class="detail-section" id="detailInfoSection">
+      <h4>書籍資訊</h4>
+      <dl class="detail-info" id="detailInfo"></dl>
+    </div>
     <div class="detail-section" id="detailTagsSection">
       <h4>標籤</h4>
       <div class="chip-row" id="detailTags"></div>
@@ -619,10 +668,10 @@ input:focus, select:focus, textarea:focus{border-color:var(--accent);}
   <div class="modal">
     <h2>匯入 Notion 匯出的 HTML<span class="x" id="closeImportModal">✕</span></h2>
     <p class="import-note">
-      請上傳從 Notion 匯出的圖書館頁面 HTML 檔（.html）。系統會自動辨識書名、類別、標籤、平台與已讀狀態，並合併加入書房（同名書籍不會重複匯入）。
+      選擇 Notion 匯出的 <b>.zip</b>（Markdown &amp; CSV，會一併匯入封面網址），或單獨選 .csv／圖書館頁面的 .html。系統依欄位名稱辨識書名、作者、譯者、出版者、出版日期、ISBN、語言、類別、標籤、平台與已讀狀態。同名書籍不會重複新增，只會補上既有書籍的空白欄位，並把 Notion 已讀的書標為已讀。
     </p>
     <button id="chooseImportFile">選擇檔案…</button>
-    <input type="file" id="importFileInput" accept=".html,.htm">
+    <input type="file" id="importFileInput" accept=".zip,.csv,.html,.htm,.md" multiple>
     <div class="import-summary" id="importSummary" style="display:none;"></div>
     <div class="modal-actions">
       <div style="margin-left:auto;">
@@ -826,6 +875,7 @@ function renderFilters(){
   $('cnt-all').textContent = state.books.length;
   $('cnt-read').textContent = state.books.filter(b=>b.read).length;
   $('cnt-unread').textContent = state.books.filter(b=>!b.read).length;
+  $('cnt-wish').textContent = state.books.filter(b=>b.wishlist).length;
 }
 
 function escapeHtml(s){
@@ -837,12 +887,14 @@ function filteredBooks(){
   const f = state.filter;
   if(f.status==='read') list = list.filter(b=>b.read);
   if(f.status==='unread') list = list.filter(b=>!b.read);
-  if(f.acquire!=='all') list = list.filter(b=>Array.isArray(b.records) && b.records.some(r=>r.type===f.acquire));
+  if(f.acquire==='欲購') list = list.filter(b=>b.wishlist);
+  else if(f.acquire!=='all') list = list.filter(b=>Array.isArray(b.records) && b.records.some(r=>r.type===f.acquire));
   if(f.categories.length>0) list = list.filter(b=> catsOf(b).some(c=>f.categories.includes(c)));
   if(f.platform!=='all') list = list.filter(b=>b.platform===f.platform);
   if(f.search){
     const q = f.search.toLowerCase();
-    list = list.filter(b => (b.title||'').toLowerCase().includes(q) || (b.tags||'').toLowerCase().includes(q) || (b.author||'').toLowerCase().includes(q));
+    list = list.filter(b => [b.title, b.tags, b.author, b.translator, b.publisher, b.isbn]
+      .some(v => (v||'').toLowerCase().includes(q)));
   }
   if(f.sort==='title') list.sort((a,b)=>(a.title||'').localeCompare(b.title||'', 'zh-Hant'));
   else list.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
@@ -873,13 +925,13 @@ function renderGrid(){
     const cats = catsOf(b);
     const color = spineColor(cats[0]);
     const tags = (b.tags||'').split(',').map(t=>t.trim()).filter(Boolean);
-    const badge = recordsBadge(b.records);
+    const badge = b.wishlist ? '欲購' : recordsBadge(b.records);
     card.innerHTML = `
       <div class="spine-strip" style="background:${color}"></div>
       <div class="cover-wrap">
         ${b.cover ? `<img src="${escapeHtml(b.cover)}" loading="lazy">` : `<div class="placeholder">${escapeHtml(b.title||'未命名')}</div>`}
         ${b.read ? '<div class="read-badge">✓</div>' : ''}
-        ${badge ? `<div class="acquire-badge">${escapeHtml(badge)}</div>` : ''}
+        ${badge ? `<div class="acquire-badge${b.wishlist?' wish':''}">${escapeHtml(badge)}</div>` : ''}
       </div>
       <div class="info">
         <div class="title">${escapeHtml(b.title||'未命名')}</div>
@@ -926,9 +978,15 @@ function openBookModal(id){
   $('modalTitle').textContent = b ? '編輯書籍' : '新增書籍';
   $('f-title').value = b ? b.title : '';
   $('f-author').value = b ? (b.author||'') : '';
+  $('f-translator').value = b ? (b.translator||'') : '';
+  $('f-publisher').value = b ? (b.publisher||'') : '';
+  $('f-pubdate').value = b ? (b.pubDate||'') : '';
+  $('f-isbn').value = b ? (b.isbn||'') : '';
+  $('f-language').value = b ? (b.language||'') : '';
   $('f-cover-url').value = b ? (b.cover||'') : '';
   $('f-tags').value = b ? (b.tags||'') : '';
   $('f-read').checked = b ? !!b.read : false;
+  $('f-wishlist').checked = b ? !!b.wishlist : false;
   currentCategories = b ? [...catsOf(b)] : [];
   renderCategoryChips();
   populateSelect($('f-platform'), state.platforms, b ? b.platform : '');
@@ -1029,8 +1087,19 @@ function openDetailModal(id){
   $('detailAuthor').textContent = b.author || '';
   $('detailAuthor').style.display = b.author ? 'block' : 'none';
 
+  const infoRows = [
+    ['譯者', b.translator],
+    ['出版社', b.publisher],
+    ['出版日期', b.pubDate],
+    ['ISBN', b.isbn],
+    ['語言', b.language]
+  ].filter(r=>r[1]);
+  $('detailInfo').innerHTML = infoRows.map(r=>`<dt>${r[0]}</dt><dd>${escapeHtml(r[1])}</dd>`).join('');
+  $('detailInfoSection').style.display = infoRows.length ? 'block' : 'none';
+
   const chips = catsOf(b).map(c=>`<span class="tag-chip">${escapeHtml(c)}</span>`);
   if(b.platform) chips.push(`<span class="tag-chip platform-chip">${escapeHtml(b.platform)}</span>`);
+  if(b.wishlist) chips.unshift('<span class="tag-chip platform-chip">欲購</span>');
   $('detailChips').innerHTML = chips.join('');
 
   $('detailReadRow').innerHTML = b.read
@@ -1106,12 +1175,18 @@ $('saveBookBtn').onclick = async ()=>{
     id: state.editingId || uid(),
     title,
     author: $('f-author').value.trim(),
+    translator: $('f-translator').value.trim(),
+    publisher: $('f-publisher').value.trim(),
+    pubDate: $('f-pubdate').value,
+    isbn: $('f-isbn').value.trim(),
+    language: $('f-language').value.trim(),
     cover: $('f-cover-url').value.trim(),
     categories: [...currentCategories],
     platform: $('f-platform').value,
     tags: $('f-tags').value.trim(),
     records: currentRecords.map(r=>({type:r.type||'購買', date:r.date||'', note:(r.note||'').trim()})),
     read: $('f-read').checked,
+    wishlist: $('f-wishlist').checked,
     createdAt: Date.now()
   };
   const existingIdx = state.books.findIndex(b=>b.id===payload.id);
@@ -1276,12 +1351,14 @@ function csvEscape(v){
   return s;
 }
 $('btnExport').onclick = ()=>{
-  const headers = ['書籍名稱','作者','書籍類別','標籤','購買平台','借閱／購買紀錄','已讀完','書封網址'];
+  const headers = ['書籍名稱','作者','譯者','出版社','出版日期','ISBN','語言','書籍類別','標籤','購買平台','借閱／購買紀錄','已讀完','欲購','書封網址'];
   const rows = state.books.map(b=>{
     const recordsStr = (Array.isArray(b.records) ? b.records : [])
       .map(r => `${r.type||''}${r.date?`(${r.date})`:''}${r.note?`：${r.note}`:''}`)
       .join(' ; ');
-    return [b.title, b.author||'', catsOf(b).join('; '), b.tags, b.platform, recordsStr, b.read ? '是':'否', b.cover];
+    // ISBN 前面加 tab，避免 Excel 把長數字轉成科學記號
+    const isbnCell = b.isbn ? '\t' + b.isbn : '';
+    return [b.title, b.author||'', b.translator||'', b.publisher||'', b.pubDate||'', isbnCell, b.language||'', catsOf(b).join('; '), b.tags, b.platform, recordsStr, b.read ? '是':'否', b.wishlist ? '是':'否', b.cover];
   });
   const csv = [headers, ...rows].map(r=>r.map(csvEscape).join(',')).join('\n');
   const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
@@ -1296,7 +1373,7 @@ $('btnExport').onclick = ()=>{
   toast('已匯出 CSV');
 };
 
-/* ---------------- Notion HTML Import ---------------- */
+/* ---------------- Notion import (zip / CSV / HTML) ---------------- */
 $('btnImport').onclick = ()=>{
   $('importSummary').style.display='none';
   $('importSummary').innerHTML='';
@@ -1308,102 +1385,279 @@ $('importModalOverlay').addEventListener('click', e=>{ if(e.target.id==='importM
 $('chooseImportFile').onclick = ()=> $('importFileInput').click();
 
 $('importFileInput').onchange = async (e)=>{
-  const file = e.target.files[0];
-  if(!file) return;
-  const text = await file.text();
-  await importNotionHtml(text);
+  const files = Array.from(e.target.files || []);
   e.target.value = '';
+  if(files.length===0) return;
+  showImportSummary('讀取中，請稍候…', []);
+  try{
+    let entries = [];
+    for(const f of files){
+      if(/\.zip$/i.test(f.name)){
+        if(typeof JSZip === 'undefined'){
+          showImportSummary('zip 解壓元件尚未載入（可能是網路問題）。請稍後再試，或先把 zip 解壓縮後改選裡面的 .csv 檔。', []);
+          return;
+        }
+        const zip = await JSZip.loadAsync(f);
+        Object.values(zip.files).forEach(zf=>{
+          if(zf.dir || zf.name.startsWith('__MACOSX/')) return;
+          entries.push({ name: zf.name, text: ()=>zf.async('string') });
+        });
+      }else{
+        entries.push({ name: f.name, text: ()=>f.text() });
+      }
+    }
+    await importFromEntries(entries);
+  }catch(err){
+    console.error(err);
+    showImportSummary('匯入失敗：' + (err && err.message ? err.message : '無法讀取檔案'), []);
+  }
 };
 
-async function importNotionHtml(htmlText){
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(htmlText, 'text/html');
-  const tables = Array.from(doc.querySelectorAll('table.collection-content'));
+function parseNotionDate(t){
+  t = String(t||'').trim();
+  if(!t) return '';
+  let m = t.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+  if(!m) m = t.match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+  if(m) return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+  const d = new Date(t.replace(/^@/, ''));   // 例如 "November 9, 2021"
+  if(!isNaN(d.getTime())){
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  return '';
+}
 
-  let bestTable = null;
-  let bestScore = -1;
-  tables.forEach(t=>{
+function parseCsv(text){
+  if(text.charCodeAt(0)===0xFEFF) text = text.slice(1);
+  const rows = []; let row = [], cell = '', inQ = false;
+  for(let i=0; i<text.length; i++){
+    const c = text[i];
+    if(inQ){
+      if(c==='"'){ if(text[i+1]==='"'){ cell += '"'; i++; } else inQ = false; }
+      else cell += c;
+    }else if(c==='"'){ inQ = true; }
+    else if(c===','){ row.push(cell); cell = ''; }
+    else if(c==='\n' || c==='\r'){
+      if(c==='\r' && text[i+1]==='\n') i++;
+      row.push(cell); cell = ''; rows.push(row); row = [];
+    }else cell += c;
+  }
+  if(cell!=='' || row.length){ row.push(cell); rows.push(row); }
+  return rows.filter(r => !(r.length===1 && r[0]===''));
+}
+
+function splitMulti(s){
+  return String(s||'').split(/[,，]/).map(x=>x.trim()).filter(Boolean);
+}
+
+// 依欄位名稱找出各欄位位置（容許名稱前後有空白、出版者／出版社兩種寫法）
+function findColumns(headers){
+  const h = headers.map(x=>String(x||'').trim());
+  const find = (...keys) => h.findIndex(x => keys.some(k => x.toLowerCase().includes(k)));
+  let read = h.findIndex(x => x==='已閱' || x==='已讀' || x==='已讀完');
+  if(read<0) read = h.findIndex(x => x.includes('閱') && !x.includes('書籍名稱') && !x.includes('頁') && !x.includes('mins'));
+  return {
+    title: find('書籍名稱'),
+    author: find('作者'),
+    translator: find('譯者'),
+    publisher: find('出版者', '出版社'),
+    pubDate: find('出版日期'),
+    isbn: find('isbn'),
+    language: find('語言'),
+    category: find('書籍類別', '類別'),
+    tags: find('tag'),
+    platform: find('平台'),
+    read
+  };
+}
+
+function recordsFromCsv(text){
+  const rows = parseCsv(text);
+  if(rows.length<2) return null;
+  const col = findColumns(rows[0]);
+  if(col.title<0) return null;
+  const get = (r, i) => i>=0 && r[i]!==undefined ? String(r[i]).trim() : '';
+  const records = rows.slice(1).map(r=>({
+    title: get(r, col.title),
+    author: get(r, col.author),
+    translator: get(r, col.translator),
+    publisher: get(r, col.publisher),
+    pubDate: parseNotionDate(get(r, col.pubDate)),
+    isbn: get(r, col.isbn),
+    language: get(r, col.language),
+    categories: splitMulti(get(r, col.category)),
+    tags: splitMulti(get(r, col.tags)).join(', '),
+    platform: get(r, col.platform),
+    cover: '',
+    read: /^(yes|true|是|✓|v)$/i.test(get(r, col.read))
+  })).filter(x=>x.title);
+  const score = Object.values(col).filter(i=>i>=0).length;
+  return { records, score };
+}
+
+function recordsFromHtml(htmlText){
+  const doc = new DOMParser().parseFromString(htmlText, 'text/html');
+  let best = null, bestScore = -1;
+  Array.from(doc.querySelectorAll('table.collection-content')).forEach(t=>{
     const headers = Array.from(t.querySelectorAll('thead th')).map(th=>th.textContent.trim());
     let score = 0;
     if(headers.some(h=>h.includes('書籍名稱'))) score+=3;
     if(headers.some(h=>h.includes('類別'))) score+=1;
     if(headers.some(h=>h.includes('平台'))) score+=1;
     if(headers.some(h=>h.includes('閱'))) score+=1;
-    if(score>bestScore){ bestScore=score; bestTable=t; }
+    if(score>bestScore){ bestScore=score; best=t; }
   });
+  if(!best || bestScore<3) return null;
 
-  if(!bestTable || bestScore<3){
-    showImportSummary('找不到符合的書籍表格。請確認上傳的是圖書館頁面的 Notion 匯出檔。', []);
+  const headers = Array.from(best.querySelectorAll('thead th')).map(th=>th.textContent.trim());
+  const col = findColumns(headers);
+  const records = [];
+  Array.from(best.querySelectorAll('tbody tr')).forEach(row=>{
+    const cells = Array.from(row.children);
+    const titleCell = row.querySelector('.cell-title');
+    if(!titleCell) return;
+    const title = titleCell.textContent.trim();
+    if(!title) return;
+    const img = titleCell.querySelector('img');
+    const selArr = (i) => (i<0 || !cells[i]) ? [] :
+      Array.from(cells[i].querySelectorAll('.selected-value')).map(s=>s.textContent.trim()).filter(Boolean);
+    const text = (i) => (i<0 || !cells[i]) ? '' : (selArr(i).join(', ') || cells[i].textContent.trim());
+    const cb = col.read>=0 && cells[col.read] ? cells[col.read].querySelector('input[type=checkbox]') : null;
+    records.push({
+      title,
+      author: text(col.author),
+      translator: text(col.translator),
+      publisher: text(col.publisher),
+      pubDate: parseNotionDate(text(col.pubDate)),
+      isbn: text(col.isbn),
+      language: text(col.language),
+      categories: selArr(col.category),
+      tags: text(col.tags),
+      platform: text(col.platform),
+      cover: img ? img.getAttribute('src') : '',
+      read: cb ? cb.hasAttribute('checked') : false
+    });
+  });
+  return { records, score: bestScore };
+}
+
+// Notion 的 Markdown 匯出：每本書一個 .md，第一行是「# 書名」，封面是 ![](網址)
+function coverFromMarkdown(text){
+  const lines = text.split(/\r?\n/);
+  const first = lines.find(l=>l.trim()!=='') || '';
+  if(!first.startsWith('# ')) return null;
+  const title = first.slice(2).trim();
+  let url = '', local = false;
+  for(const l of lines){
+    const m = l.match(/^!\[[^\]]*\]\((.*)\)\s*$/);
+    if(m){ url = m[1].trim(); break; }
+  }
+  if(url && !/^https?:\/\//i.test(url)){ local = true; url = ''; }
+  return { title, url, local };
+}
+
+function pickName(list, name){
+  if(!name) return '';
+  if(list.includes(name)) return name;
+  const hit = list.find(x=>x.toLowerCase()===name.toLowerCase());
+  if(hit) return hit;
+  list.push(name);
+  return name;
+}
+
+// 只有網址或內嵌圖片才能在網頁上顯示；Notion 匯出的相對路徑（圖書館/xxx.jpg）不行
+const coverUsable = (c) => /^(https?:|data:)/i.test(c||'');
+
+function mergeRecords(records, coverMap){
+  const byTitle = new Map();
+  state.books.forEach(b=>{ if(!byTitle.has(b.title)) byTitle.set(b.title, b); });
+  const stats = { added:0, updated:0, unchanged:0, coversApplied:0, readUpdated:0 };
+  const fields = ['author','translator','publisher','pubDate','isbn','language','tags','platform','cover'];
+
+  records.forEach(rec=>{
+    rec.platform = pickName(state.platforms, rec.platform);
+    rec.categories = rec.categories.map(c=>pickName(state.categories, c));
+    if(!coverUsable(rec.cover)) rec.cover = '';
+    if(!rec.cover && coverMap.has(rec.title)) rec.cover = coverMap.get(rec.title);
+
+    const ex = byTitle.get(rec.title);
+    if(ex){
+      let changed = false;
+      fields.forEach(f=>{
+        const isEmpty = f==='cover' ? !coverUsable(ex.cover) : !ex[f];
+        if(isEmpty && rec[f]){
+          ex[f] = rec[f]; changed = true;
+          if(f==='cover') stats.coversApplied++;
+        }
+      });
+      if(catsOf(ex).length===0 && rec.categories.length){ ex.categories = rec.categories; changed = true; }
+      if(rec.read && !ex.read){ ex.read = true; changed = true; stats.readUpdated++; }
+      if(changed) stats.updated++; else stats.unchanged++;
+    }else{
+      const book = {
+        id: uid(), title: rec.title,
+        author: rec.author, translator: rec.translator, publisher: rec.publisher,
+        pubDate: rec.pubDate, isbn: rec.isbn, language: rec.language,
+        cover: rec.cover, categories: rec.categories, platform: rec.platform, tags: rec.tags,
+        records: [], read: rec.read, createdAt: Date.now()
+      };
+      state.books.push(book);
+      byTitle.set(book.title, book);
+      stats.added++;
+      if(book.cover) stats.coversApplied++;
+    }
+  });
+  stats.noCover = state.books.filter(b=>!coverUsable(b.cover)).length;
+  return stats;
+}
+
+async function importFromEntries(entries){
+  const lower = (e) => e.name.toLowerCase();
+  const csvs  = entries.filter(e=>lower(e).endsWith('.csv'));
+  const htmls = entries.filter(e=>/\.html?$/.test(lower(e)));
+  const mds   = entries.filter(e=>lower(e).endsWith('.md'));
+
+  // 1) 主資料：在所有 CSV 中挑出欄位最完整的「書籍名稱」表格；沒有 CSV 才用 HTML
+  let best = null;
+  for(const e of csvs){
+    const r = recordsFromCsv(await e.text());
+    if(r && (!best || r.score>best.score || (r.score===best.score && r.records.length>best.records.length))) best = r;
+  }
+  if(!best){
+    for(const e of htmls){
+      const r = recordsFromHtml(await e.text());
+      if(r && (!best || r.score>best.score)) best = r;
+    }
+  }
+  if(!best || best.records.length===0){
+    showImportSummary('找不到書籍資料。請選擇 Notion 匯出的 .zip（Markdown & CSV）、圖書館的 .csv，或圖書館頁面的 .html 檔。', []);
     return;
   }
 
-  const headers = Array.from(bestTable.querySelectorAll('thead th')).map(th=>th.textContent.trim());
-  const colIndex = (keyword) => headers.findIndex(h=>h.includes(keyword));
-  const idxCategory = colIndex('類別');
-  const idxTag = headers.findIndex(h=>h.toLowerCase().includes('tag'));
-  const idxPlatform = colIndex('平台');
-  const idxAuthor = colIndex('作者');
-  const idxRead = headers.findIndex(h=>h.includes('閱') && h!=='書籍名稱');
-
-  const rows = Array.from(bestTable.querySelectorAll('tbody tr'));
-  const existingTitles = new Set(state.books.map(b=>b.title));
-  let added = 0, skipped = 0;
-  const addedTitles = [];
-
-  for(const row of rows){
-    const cells = Array.from(row.children);
-    const titleCell = row.querySelector('.cell-title');
-    if(!titleCell) continue;
-    const title = titleCell.textContent.trim();
-    if(!title || existingTitles.has(title)){ skipped++; continue; }
-
-    const img = titleCell.querySelector('img');
-    const cover = img ? img.getAttribute('src') : '';
-
-    const getSelectText = (i) => {
-      if(i<0 || !cells[i]) return '';
-      const spans = Array.from(cells[i].querySelectorAll('.selected-value'));
-      return spans.map(s=>s.textContent.trim()).filter(Boolean).join(', ');
-    };
-    const getSelectArray = (i) => {
-      if(i<0 || !cells[i]) return [];
-      const spans = Array.from(cells[i].querySelectorAll('.selected-value'));
-      return spans.map(s=>s.textContent.trim()).filter(Boolean);
-    };
-    const categories = getSelectArray(idxCategory);
-    const tags = getSelectText(idxTag) || (cells[idxTag] ? cells[idxTag].textContent.trim() : '');
-    const platform = getSelectText(idxPlatform);
-    const author = idxAuthor>=0 && cells[idxAuthor] ? (getSelectText(idxAuthor) || cells[idxAuthor].textContent.trim()) : '';
-    const readCheckbox = idxRead>=0 && cells[idxRead] ? cells[idxRead].querySelector('input[type=checkbox]') : null;
-    const read = readCheckbox ? readCheckbox.hasAttribute('checked') : false;
-
-    categories.forEach(c=>{ if(!state.categories.includes(c)) state.categories.push(c); });
-    if(platform && !state.platforms.includes(platform)) state.platforms.push(platform);
-
-    const book = {
-      id: uid(),
-      title, author, cover, categories, platform, tags,
-      records: [], read,
-      createdAt: Date.now()
-    };
-    state.books.push(book);
-    existingTitles.add(title);
-    await saveBook(book);
-    added++;
-    addedTitles.push(title);
+  // 2) 封面：從 .md 檔讀取網址型封面（CSV 本身沒有封面欄位）
+  const coverMap = new Map();
+  for(const e of mds){
+    const c = coverFromMarkdown(await e.text());
+    if(c && c.url) coverMap.set(c.title, c.url);
   }
 
-  await saveMeta();
-  await saveBookIndex();
+  const stats = mergeRecords(best.records, coverMap);
+  markDirty();
   renderAll();
-  showImportSummary(`匯入完成：新增 ${added} 本，略過重複 ${skipped} 本。`, addedTitles);
+
+  const lines = [`共讀取 ${best.records.length} 筆：新增 ${stats.added} 本，補齊既有書籍欄位 ${stats.updated} 本，無需變動 ${stats.unchanged} 本。`];
+  if(mds.length) lines.push(`封面：套用 ${stats.coversApplied} 張網址封面。`);
+  else lines.push('未選到 .md 檔，因此沒有匯入封面（請選整個 .zip 就會一併處理）。');
+  if(stats.noCover) lines.push(`目前有 ${stats.noCover} 本沒有可顯示的封面（Notion 內的圖片檔無法在網頁顯示，需手動貼網址或上傳）。`);
+  if(stats.readUpdated) lines.push(`已依 Notion 把 ${stats.readUpdated} 本未讀的書改為已讀。`);
+  lines.push('既有書籍只會補上「空白」的欄位，並把 Notion 已讀的書標為已讀；不會覆蓋你已填的內容，也不會把已讀改回未讀。記得按「儲存」才會保存。');
+  showImportSummary(lines.join('\n'), []);
   toast('匯入完成');
 }
 
 function showImportSummary(msg, titles){
   const el = $('importSummary');
   el.style.display='block';
-  el.innerHTML = `<div>${escapeHtml(msg)}</div>` +
+  el.innerHTML = `<div>${escapeHtml(msg).replace(/\n/g,'<br>')}</div>` +
     (titles.length ? `<div class="chip-row">${titles.slice(0,40).map(t=>`<span class="small-chip">${escapeHtml(t)}</span>`).join('')}</div>` : '');
 }
 
